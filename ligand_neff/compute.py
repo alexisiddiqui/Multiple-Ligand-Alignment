@@ -12,7 +12,12 @@ from ligand_neff.neff.weighting import inverse_degree_weights
 from ligand_neff.neff.per_atom import per_atom_neff_single_radius
 from ligand_neff.neff.aggregation import aggregate_neff, normalise_to_confidence
 
-def compute_neff(query: Chem.Mol, db_mols: Sequence[Chem.Mol], config: NeffConfig) -> NeffResult:
+def compute_neff(
+    query: Chem.Mol, 
+    db_mols: Sequence[Chem.Mol] | None, 
+    config: NeffConfig, 
+    precomputed_db: str | dict | None = None
+) -> NeffResult:
     """
     Main pipeline for computing Neff and confidence scores for a query against a reference database.
     
@@ -21,6 +26,10 @@ def compute_neff(query: Chem.Mol, db_mols: Sequence[Chem.Mol], config: NeffConfi
     """
     n_atoms = query.GetNumAtoms()
     
+    # ── 0. Handle Precomputed Database ───────────────────────────
+    if isinstance(precomputed_db, str):
+        precomputed_db = np.load(precomputed_db)
+        
     # ── 1. CPU Stage: Fingerprints & Filtering ───────────────────
     neff_per_radius = {}
     max_refs_used = 0
@@ -32,12 +41,17 @@ def compute_neff(query: Chem.Mol, db_mols: Sequence[Chem.Mol], config: NeffConfi
                               use_chirality=config.use_chirality, 
                               use_features=config.use_features).astype(np.float32)
                               
-        # DB Fingerprints (in a real system these are precomputed/cached)
-        db_fps = np.zeros((len(db_mols), config.fp_size), dtype=np.float32)
-        for j, mol in enumerate(db_mols):
-            db_fps[j] = encode_molecule(mol, radius=r, fp_size=config.fp_size,
-                                        use_chirality=config.use_chirality, 
-                                        use_features=config.use_features)
+        # DB Fingerprints (load from precomputed if available)
+        if precomputed_db is not None:
+            db_fps = precomputed_db[f"radius_{r}"].astype(np.float32)
+        else:
+            if db_mols is None:
+                raise ValueError("Must provide either db_mols or precomputed_db")
+            db_fps = np.zeros((len(db_mols), config.fp_size), dtype=np.float32)
+            for j, mol in enumerate(db_mols):
+                db_fps[j] = encode_molecule(mol, radius=r, fp_size=config.fp_size,
+                                            use_chirality=config.use_chirality, 
+                                            use_features=config.use_features)
                                         
         # Filtering & Padding on CPU
         filtered = filter_references(

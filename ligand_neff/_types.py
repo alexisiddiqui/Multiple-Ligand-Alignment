@@ -54,16 +54,54 @@ class NeffResult:
 
     def to_sdf(self, path: str) -> None:
         """Write query mol with Neff/confidence as atom properties."""
-        pass # TODO: implementation
+        from rdkit import Chem
+        mol = Chem.Mol(self.query_mol) # copy
+        
+        # We store the arrays as formatted strings so external tools can read them
+        mol.SetProp("MLA_Neff_Global", f"{self.global_neff:.4f}")
+        mol.SetProp("MLA_Confidence_Global", f"{self.global_confidence:.4f}")
+        mol.SetProp("MLA_Lambda", f"{self.lambda_value:.4f}")
+        
+        # Atom properties usually space-separated or comma-separated strings
+        neff_str = " ".join([f"{x:.4f}" for x in self.atom_neff])
+        conf_str = " ".join([f"{x:.4f}" for x in self.atom_confidence])
+        
+        mol.SetProp("MLA_Neff_Per_Atom", neff_str)
+        mol.SetProp("MLA_Confidence_Per_Atom", conf_str)
+        
+        writer = Chem.SDWriter(str(path))
+        writer.write(mol)
+        writer.close()
 
     def to_csv(self, path: str) -> None:
         """Per-atom table: idx, element, neff_r1, ..., combined, confidence."""
-        pass # TODO: implementation
+        import csv
+        
+        radii = sorted(self.neff_per_radius.keys())
+        headers = ["Atom_Idx", "Element"] + [f"Neff_R{r}" for r in radii] + ["Neff_Combined", "Confidence"]
+        
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            
+            for i in range(self.query_mol.GetNumAtoms()):
+                atom = self.query_mol.GetAtomWithIdx(i)
+                row = [i, atom.GetSymbol()]
+                
+                for r in radii:
+                    row.append(f"{self.neff_per_radius[r][i]:.4f}")
+                    
+                row.append(f"{self.atom_neff[i]:.4f}")
+                row.append(f"{self.atom_confidence[i]:.4f}")
+                
+                writer.writerow(row)
 
     def plot(self, **kwargs):
         """2D depiction coloured by atom_confidence (always normalised)."""
-        pass # TODO: implementation
+        from ligand_neff.vis.plot import plot_atom_neff
+        return plot_atom_neff(self.query_mol, self.atom_confidence, **kwargs)
 
     def plot_breakdown(self, **kwargs):
         """Bar chart with per-radius breakdown."""
-        pass # TODO: implementation
+        from ligand_neff.vis.plot import plot_confidence_bar
+        return plot_confidence_bar(self.query_mol, self.atom_confidence, self.neff_per_radius)

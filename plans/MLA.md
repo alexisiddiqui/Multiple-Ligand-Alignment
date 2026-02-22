@@ -997,16 +997,16 @@ class NeffResult:
 ### Phase 2: Weighting + Multi-Radius
 [x] 14. `neff/weighting.py` — **chunked** Inverse Degree (jaxtyped + chex assertions)
 [x] 15. `neff/aggregation.py` — multi-radius + **adaptive λ** (jaxtyped + chex assertions)
-[ ] 16. Multi-radius support in `compute_neff()`
-[ ] 17. **Test**: memory profiling at max_refs=25K, verify no OOM
-[ ] 18. **Test**: λ adaptation across small (50 mol) and large (100K mol) DBs
+[x] 16. Multi-radius support in `compute_neff()`
+[x] 17. **Test**: memory profiling at max_refs=25K, verify no OOM
+[x] 18. **Test**: λ adaptation across small (50 mol) and large (100K mol) DBs
 
 ### Phase 3: Outputs + Usability
-[ ] 19. `NeffResult` — chex.dataclass(frozen=True) with `.to_sdf()`, `.to_csv()`
+[x] 19. `NeffResult` — chex.dataclass(frozen=True) with `.to_sdf()`, `.to_csv()`
 [x] 20. `vis/plot.py` — **confidence-based** 2D depiction
 [x] 21. `vis/plot.py` — bar chart breakdown
-[ ] 22. `io/database.py` — precomputation + `.npz` save/load
-[ ] 23. `cli.py` — command-line interface
+[x] 22. `io/database.py` — precomputation + `.npz` save/load
+[x] 23. `cli.py` — command-line interface
 
 ### Phase 4: Performance + Validation
 [ ] 24. Benchmark: JIT warmup profile (compilations vs cache hits)
