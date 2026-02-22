@@ -5,8 +5,8 @@ from beartype import beartype as typechecker
 from functools import partial
 
 
-@jaxtyped(typechecker=typechecker)
 @partial(jax.jit)
+@jaxtyped(typechecker=typechecker)
 def bulk_tanimoto(
     query: Float[Array, " fp_size"],
     database: Float[Array, "n_refs fp_size"],
@@ -26,8 +26,8 @@ def bulk_tanimoto(
     return jnp.where(union > 0, intersection / union, 0.0)
 
 
-@jaxtyped(typechecker=typechecker)
 @jax.jit
+@jaxtyped(typechecker=typechecker)
 def pairwise_tanimoto_chunk(
     chunk_fps: Float[Array, "chunk fp_size"],
     all_fps: Float[Array, "n_refs fp_size"],

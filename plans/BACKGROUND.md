@@ -52,7 +52,7 @@ per-residue from the MSA. At its core, Neff answers:
 Neff is not simply the raw count of sequences in the MSA. Sequences are
 weighted to account for redundancy — a cluster of 500 nearly identical
 homologs contributes less than 10 diverse sequences covering the same
-position. This weighting, typically Henikoff-style, ensures that Neff
+position. This weighting, typically Inverse Degree-style, ensures that Neff
 reflects genuine evolutionary diversity rather than sampling bias.
 
 The correlation between MSA depth and prediction quality is one of the
@@ -82,7 +82,7 @@ follows:
 | Amino acid identity (type + context) | Atom-centred substructure (Morgan environment) |
 | Homologous sequences in MSA | Reference ligands passing similarity filter |
 | Sequence identity threshold | Tanimoto similarity threshold |
-| Henikoff sequence weighting | Henikoff-style ligand weighting |
+| Inverse Degree sequence weighting | Inverse Degree-style ligand weighting |
 | Per-residue Neff | Per-atom Neff |
 
 The conceptual leap is representing each atom not by its element type
@@ -139,13 +139,13 @@ analogs from a single medicinal chemistry campaign provides less
 independent information than 20 structurally diverse compounds spanning
 different scaffolds.
 
-We apply Henikoff-style weighting: each reference ligand receives a
+We apply Inverse Degree-style weighting: each reference ligand receives a
 weight inversely proportional to the number of other references it is
 similar to (above a clustering threshold, typically Tanimoto ≥ 0.7).
 Isolated, structurally unique references get weight 1.0. Members of
 large clusters of near-identical compounds get weight approaching 0.
 
-This directly mirrors the Henikoff weighting used in MSA Neff, where
+This directly mirrors the Inverse Degree weighting used in MSA Neff, where
 sequences in large families of close homologs are downweighted relative
 to rare, divergent sequences.
 
@@ -168,7 +168,7 @@ references:
 Neff(atom_i) = Σ_j  w_j × overlap(atom_i, ref_j) × 𝟙[overlap ≥ δ]
 ```
 
-where `w_j` is the Henikoff weight and `δ` is a minimum overlap threshold
+where `w_j` is the Inverse Degree weight and `δ` is a minimum overlap threshold
 that prevents distant ligands sharing a single common bit from
 contributing noise.
 

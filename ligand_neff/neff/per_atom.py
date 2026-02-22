@@ -6,9 +6,9 @@ from beartype import beartype as typechecker
 from functools import partial
 
 
-@jaxtyped(typechecker=typechecker)
-@chex.assert_max_traces(n=50)
 @partial(jax.jit, static_argnames=("min_overlap",))
+@chex.assert_max_traces(n=50)
+@jaxtyped(typechecker=typechecker)
 def per_atom_neff_single_radius(
     atom_bit_mask: Float[Array, "n_atoms fp_size"],
     ref_fps: Float[Array, "max_refs fp_size"],

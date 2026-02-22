@@ -265,14 +265,14 @@ from beartype import beartype as typechecker
 
 
 @jaxtyped(typechecker=typechecker)
-def henikoff_weights(
+def inverse_degree_weights(
     fps: Float[Array, "max_refs fp_size"],
     mask: Bool[Array, " max_refs"],
     threshold: float = 0.7,
     chunk_size: int = 2048,
 ) -> Float[Array, " max_refs"]:
     """
-    Henikoff-style per-ligand weights with chunked pairwise computation.
+    Inverse Degree-style per-ligand weights with chunked pairwise computation.
 
     jaxtyping enforces:
     - fps and mask share the max_refs dimension
@@ -499,13 +499,13 @@ def per_atom_neff_single_radius(
 ) -> Float[Array, " n_atoms"]:
     ...
 
-# Henikoff weights should be traced EXACTLY ONCE per config
+# Inverse Degree weights should be traced EXACTLY ONCE per config
 # (max_refs and fp_size are fixed). If this re-traces, something
 # is wrong with the padding.
 
 @chex.assert_max_traces(n=1)
 @jax.jit
-def _henikoff_core(
+def _inverse_degree_core(
     fps: Float[Array, "max_refs fp_size"],
     fp_bits: Float[Array, " max_refs"],
     mask: Bool[Array, " max_refs"],
@@ -513,7 +513,7 @@ def _henikoff_core(
     n_chunks: int,
     chunk_size: int,
 ) -> Float[Array, " max_refs"]:
-    """Inner loop for Henikoff. Must trace exactly once."""
+    """Inner loop for Inverse Degree. Must trace exactly once."""
     ...
 ```
 
@@ -660,7 +660,7 @@ class PerAtomNeffTest(chex.TestCase):
             chex.assert_shape(neff, (n_atoms,))
 
 
-class HenikoffWeightsTest(chex.TestCase):
+class InverseDegreeWeightsTest(chex.TestCase):
 
     @chex.variants(with_jit=True, without_jit=True)
     def test_identical_refs_get_low_weight(self):
@@ -670,7 +670,7 @@ class HenikoffWeightsTest(chex.TestCase):
         fps = fps.at[:10].set(1.0)  # 10 identical refs
         mask = jnp.zeros(max_refs, dtype=bool).at[:10].set(True)
 
-        weights = henikoff_weights(fps, mask, threshold=0.7)
+        weights = inverse_degree_weights(fps, mask, threshold=0.7)
 
         # First 10 should have weight ≈ 0.1 (1/10)
         chex.assert_trees_all_close(
@@ -689,18 +689,18 @@ class HenikoffWeightsTest(chex.TestCase):
 class TraceCountTest(chex.TestCase):
     """Verify JIT recompilation stays bounded."""
 
-    def test_henikoff_traces_once(self):
-        """Henikoff with fixed shapes must trace exactly once."""
+    def test_inverse_degree_traces_once(self):
+        """Inverse Degree with fixed shapes must trace exactly once."""
         chex.clear_trace_counter()
 
         fps = jnp.ones((100, 2048))
         mask = jnp.ones(100, dtype=bool)
 
         # First call: traces
-        _ = henikoff_weights(fps, mask)
+        _ = inverse_degree_weights(fps, mask)
         # Second call: cache hit, no re-trace
-        _ = henikoff_weights(fps * 0.5, mask)
-        # If _henikoff_core has @chex.assert_max_traces(n=1),
+        _ = inverse_degree_weights(fps * 0.5, mask)
+        # If _inverse_degree_core has @chex.assert_max_traces(n=1),
         # a re-trace here would raise AssertionError
 
 

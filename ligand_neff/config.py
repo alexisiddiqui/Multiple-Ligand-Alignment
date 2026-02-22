@@ -21,8 +21,8 @@ class NeffConfig:
 
     # ── Weighting ────────────────────────────────────────────────
     cluster_threshold: float = 0.7
-    weighting: Literal["henikoff", "none"] = "henikoff"
-    henikoff_chunk_size: int = 2048             # Rows per chunk in pairwise
+    weighting: Literal["inverse_degree", "none"] = "inverse_degree"
+    inverse_degree_chunk_size: int = 2048             # Rows per chunk in pairwise
 
     # ── Per-atom Neff ────────────────────────────────────────────
     coverage_metric: Literal["overlap", "binary"] = "overlap"
@@ -54,7 +54,7 @@ class NeffConfig:
             import warnings
             warnings.warn(
                 f"max_references={self.max_references} will allocate "
-                f"~{self.max_references**2 * 4 / 1e9:.1f} GB for Henikoff "
+                f"~{self.max_references**2 * 4 / 1e9:.1f} GB for Inverse Degree "
                 f"pairwise matrix. Consider reducing or using weighting='none'."
             )
 

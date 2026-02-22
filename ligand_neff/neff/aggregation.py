@@ -42,6 +42,6 @@ def normalise_to_confidence(
     lam: float,
 ) -> Float[Array, " n_atoms"]:
     """Map raw Neff → [0, 1] confidence."""
-    chex.assert_scalar_positive_finite(lam)
+    chex.assert_scalar_positive(lam)
     confidence = 1.0 - jnp.exp(-neff / lam)
     return confidence

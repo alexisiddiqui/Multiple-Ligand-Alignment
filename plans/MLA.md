@@ -5,13 +5,13 @@
 Addresses five critical issues from review, plus chex/jaxtyping integration and four additional JAX correctness fixes:
 
 1. **JAX dynamic shape recompilation** → static padding + boolean masking throughout
-2. **Henikoff pairwise OOM** → chunked `lax.map` with configurable chunk size
+2. **Inverse Degree pairwise OOM** → chunked `lax.map` with configurable chunk size
 3. **Visualization outlier sensitivity** → always plot normalised confidence, not raw Neff
 4. **λ saturation mismatch** → adaptive λ estimation from reference distribution
 5. **Bitvector length** → tunable: 2048, 4096, 8192 with validation
 6. **Type safety** → `chex` dataclasses + `jaxtyping`/`beartype` shape annotations throughout
 7. **`FilteredReferences.n_valid` recompilation** → stored as `Int[Array, ""]` (JAX int32 scalar), not Python `int`
-8. **`dynamic_slice` OOB in chunked Henikoff** → fps padded to next multiple of `chunk_size` before slicing
+8. **`dynamic_slice` OOB in chunked Inverse Degree** → fps padded to next multiple of `chunk_size` before slicing
 9. **`NeffState.atom_masks: dict`** → replaced with stacked `Float[Array, "n_radii n_atoms fp_size"]` tensor
 10. **Fingerprint memory** → stored as `uint8`, cast to `float32` inside JAX kernels
 
@@ -218,8 +218,8 @@ class NeffConfig:
 
     # ── Weighting ────────────────────────────────────────────────
     cluster_threshold: float = 0.7
-    weighting: Literal["henikoff", "none"] = "henikoff"
-    henikoff_chunk_size: int = 2048             # Rows per chunk in pairwise
+    weighting: Literal["inverse_degree", "none"] = "inverse_degree"
+    inverse_degree_chunk_size: int = 2048             # Rows per chunk in pairwise
 
     # ── Per-atom Neff ────────────────────────────────────────────
     coverage_metric: Literal["overlap", "binary"] = "overlap"
@@ -251,7 +251,7 @@ class NeffConfig:
             import warnings
             warnings.warn(
                 f"max_references={self.max_references} will allocate "
-                f"~{self.max_references**2 * 4 / 1e9:.1f} GB for Henikoff "
+                f"~{self.max_references**2 * 4 / 1e9:.1f} GB for Inverse Degree "
                 f"pairwise matrix. Consider reducing or using weighting='none'."
             )
 ```
@@ -287,8 +287,8 @@ reference_filtering:
 
 weighting:
   cluster_threshold: 0.7
-  weighting: "henikoff"
-  henikoff_chunk_size: 2048
+  weighting: "inverse_degree"
+  inverse_degree_chunk_size: 2048
 
 per_atom_neff:
   coverage_metric: "overlap"
@@ -370,7 +370,7 @@ filter_references  →  (padded_fps, mask)
 pairwise_tanimoto  →  (sim_matrix, mask)     # mask out padded rows/cols
         │                    │
         ▼                    ▼
-henikoff_weights   →  (weights * mask)       # padded entries get weight 0
+inverse_degree_weights   →  (weights * mask)       # padded entries get weight 0
         │                    │
         ▼                    ▼
 per_atom_neff      →  neff (correct)         # zero weights kill padding
@@ -535,14 +535,14 @@ from beartype import beartype as typechecker
 
 
 @jaxtyped(typechecker=typechecker)
-def henikoff_weights(
+def inverse_degree_weights(
     fps: Float[Array, "max_refs fp_size"],
     mask: Bool[Array, " max_refs"],
     threshold: float = 0.7,
     chunk_size: int = 2048,
 ) -> Float[Array, " max_refs"]:
     """
-    Henikoff-style weights with memory-safe chunked pairwise computation.
+    Inverse Degree-style weights with memory-safe chunked pairwise computation.
 
     jaxtyping enforces fps and mask share the max_refs dimension.
     Output has same max_refs dimension as input.
@@ -609,7 +609,7 @@ def _chunked_neighbor_count(
     BEFORE calling this function. The extra pad rows have mask=False, so
     they contribute 0 to all counts and are safe to read.
 
-    The caller (`henikoff_weights`) is responsible for the padding:
+    The caller (`inverse_degree_weights`) is responsible for the padding:
 
         pad_len = (-max_refs) % chunk_size   # 0 if already a multiple
         fps     = jnp.pad(fps,     [(0, pad_len), (0, 0)])
@@ -666,7 +666,7 @@ chunk_size). Overhead is at most `chunk_size - 1` rows ≈ 2047 extra rows,
 which is negligible. The chunk_size of 2048 is tunable via config. On GPUs
 with >16 GB VRAM, increasing to 4096 reduces loop iterations and may be faster.
 
-**OOB guard note:** Because `henikoff_weights` pads before calling
+**OOB guard note:** Because `inverse_degree_weights` pads before calling
 `_chunked_neighbor_count`, the `lax.dynamic_slice` start indices are always
 a multiple of `chunk_size`, so `start + chunk_size == (i+1)*chunk_size <= padded_size`
 holds for every `i` in `[0, n_chunks)`. No bounds check is needed inside the loop.
@@ -896,7 +896,7 @@ def plot_confidence_bar(
                      │ static-shape arrays             │
                      ▼                                │
  ┌──────────────────────────────────────────────────┐│
- │ 7. henikoff_weights(fps, mask, θ, chunk_size)    ││  ← JIT, chunked pairwise
+ │ 7. inverse_degree_weights(fps, mask, θ, chunk_size)    ││  ← JIT, chunked pairwise
  │    → weights (max_refs,)  [0 for padded]         ││
  │                                                   ││
  │ 8. For each radius r:  [JIT per unique n_atoms]  ││
@@ -924,7 +924,7 @@ def plot_confidence_bar(
 | Function | Recompilations | Reason |
 |----------|---------------|--------|
 | `bulk_tanimoto` | 1 | N_db is fixed per database |
-| `henikoff_weights` | 1 | max_refs is static config |
+| `inverse_degree_weights` | 1 | max_refs is static config |
 | `per_atom_neff_single_radius` | ~25 | One per unique n_atoms value |
 | `aggregate_neff` | ~25 | Same n_atoms dependency |
 | **Total** | ~52 | Amortised over 100 queries |
@@ -980,40 +980,40 @@ class NeffResult:
 ## 7. Implementation Order (Revised)
 
 ### Phase 1: Core with Static Shapes + Typing
-1. `_types.py` — type aliases + NeffResult (chex.dataclass)
-2. `config.py` — dataclass with fp_size validation
-3. `fingerprints/decompose.py` — bit decomposition
-4. `fingerprints/encode.py` — FP → numpy with configurable fp_size
-5. `similarity/tanimoto.py` — JAX bulk Tanimoto (jaxtyped)
-6. `similarity/filtering.py` — **pad + mask** output (chex.dataclass + chex assertions)
-7. `neff/per_atom.py` — mask-aware Neff (jaxtyped + assert_max_traces)
-8. `neff/_state.py` — NeffState (chex.dataclass)
-9. `io/query.py` — SDF loading
-10. `io/database.py` — basic SDF/SMILES loading
-11. `tests/conftest.py` — jaxtyping import hook
-12. Integration: `compute_neff()` single radius, verify no recompilation
-13. **Test**: run 50 queries, assert JIT cache hits after warmup
+[x] 1. `_types.py` — type aliases + NeffResult (chex.dataclass)
+[x] 2. `config.py` — dataclass with fp_size validation
+[x] 3. `fingerprints/decompose.py` — bit decomposition
+[x] 4. `fingerprints/encode.py` — FP → numpy with configurable fp_size
+[x] 5. `similarity/tanimoto.py` — JAX bulk Tanimoto (jaxtyped)
+[x] 6. `similarity/filtering.py` — **pad + mask** output (chex.dataclass + chex assertions)
+[x] 7. `neff/per_atom.py` — mask-aware Neff (jaxtyped + assert_max_traces)
+[x] 8. `neff/_state.py` — NeffState (chex.dataclass)
+[x] 9. `io/query.py` — SDF loading
+[x] 10. `io/database.py` — basic SDF/SMILES loading
+[x] 11. `tests/conftest.py` — jaxtyping import hook
+[x] 12. Integration: `compute_neff()` single radius, verify no recompilation
+[x] 13. **Test**: run 50 queries, assert JIT cache hits after warmup
 
 ### Phase 2: Weighting + Multi-Radius
-14. `neff/weighting.py` — **chunked** Henikoff (jaxtyped + chex assertions)
-15. `neff/aggregation.py` — multi-radius + **adaptive λ** (jaxtyped + chex assertions)
-16. Multi-radius support in `compute_neff()`
-17. **Test**: memory profiling at max_refs=25K, verify no OOM
-18. **Test**: λ adaptation across small (50 mol) and large (100K mol) DBs
+[x] 14. `neff/weighting.py` — **chunked** Inverse Degree (jaxtyped + chex assertions)
+[x] 15. `neff/aggregation.py` — multi-radius + **adaptive λ** (jaxtyped + chex assertions)
+[ ] 16. Multi-radius support in `compute_neff()`
+[ ] 17. **Test**: memory profiling at max_refs=25K, verify no OOM
+[ ] 18. **Test**: λ adaptation across small (50 mol) and large (100K mol) DBs
 
 ### Phase 3: Outputs + Usability
-19. `NeffResult` — chex.dataclass(frozen=True) with `.to_sdf()`, `.to_csv()`
-20. `vis/plot.py` — **confidence-based** 2D depiction
-21. `vis/plot.py` — bar chart breakdown
-22. `io/database.py` — precomputation + `.npz` save/load
-23. `cli.py` — command-line interface
+[ ] 19. `NeffResult` — chex.dataclass(frozen=True) with `.to_sdf()`, `.to_csv()`
+[x] 20. `vis/plot.py` — **confidence-based** 2D depiction
+[x] 21. `vis/plot.py` — bar chart breakdown
+[ ] 22. `io/database.py` — precomputation + `.npz` save/load
+[ ] 23. `cli.py` — command-line interface
 
 ### Phase 4: Performance + Validation
-24. Benchmark: JIT warmup profile (compilations vs cache hits)
-25. Benchmark: GPU vs CPU at fp_size 2048/4096/8192
-26. Benchmark: chunked vs full pairwise at various max_refs
-27. Validation against docking RMSD / AF ligand pLDDT
-28. Documentation + examples
+[ ] 24. Benchmark: JIT warmup profile (compilations vs cache hits)
+[ ] 25. Benchmark: GPU vs CPU at fp_size 2048/4096/8192
+[ ] 26. Benchmark: chunked vs full pairwise at various max_refs
+[ ] 27. Validation
+[ ] 28. Documentation + examples
 
 ---
 
@@ -1085,13 +1085,13 @@ class PerAtomNeffTest(chex.TestCase):
 
 class TraceCountTest(chex.TestCase):
 
-    def test_henikoff_traces_once(self):
-        """Henikoff with fixed shapes must trace exactly once."""
+    def test_inverse_degree_traces_once(self):
+        """Inverse Degree with fixed shapes must trace exactly once."""
         chex.clear_trace_counter()
         fps = jnp.ones((100, 2048))
         mask = jnp.ones(100, dtype=bool)
-        _ = henikoff_weights(fps, mask)
-        _ = henikoff_weights(fps * 0.5, mask)  # cache hit, no re-trace
+        _ = inverse_degree_weights(fps, mask)
+        _ = inverse_degree_weights(fps * 0.5, mask)  # cache hit, no re-trace
 ```
 
 ### Critical new tests

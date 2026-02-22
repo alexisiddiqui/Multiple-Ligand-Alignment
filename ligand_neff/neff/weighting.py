@@ -6,14 +6,14 @@ from beartype import beartype as typechecker
 
 
 @jaxtyped(typechecker=typechecker)
-def henikoff_weights(
+def inverse_degree_weights(
     fps: Float[Array, "max_refs fp_size"],
     mask: Bool[Array, " max_refs"],
     threshold: float = 0.7,
     chunk_size: int = 2048,
 ) -> Float[Array, " max_refs"]:
     """
-    Henikoff-style weights with memory-safe chunked pairwise computation.
+    Inverse Degree-style weights with memory-safe chunked pairwise computation.
 
     jaxtyping enforces fps and mask share the max_refs dimension.
     Output has same max_refs dimension as input.
@@ -80,7 +80,7 @@ def _chunked_neighbor_count(
     BEFORE calling this function. The extra pad rows have mask=False, so
     they contribute 0 to all counts and are safe to read.
 
-    The caller (`henikoff_weights`) is responsible for the padding:
+    The caller (`inverse_degree_weights`) is responsible for the padding:
 
         pad_len = (-max_refs) % chunk_size   # 0 if already a multiple
         fps     = jnp.pad(fps,     [(0, pad_len), (0, 0)])

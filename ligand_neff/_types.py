@@ -11,9 +11,11 @@ Fingerprint      = UInt8[Array, "fp_size"]       # storage dtype
 FingerprintF32   = Float[Array, "fp_size"]       # computation dtype (cast inside kernels)
 FingerprintBatch = UInt8[Array, "batch fp_size"] # storage dtype
 
+import numpy as np
 # Per-atom structures
 AtomBitMask      = Float[Array, "n_atoms fp_size"]  # always float32 (used in dots)
-AtomScores       = Float[Array, "n_atoms"]
+# We use numpy arrays for the final result object
+AtomScores       = np.ndarray
 
 # Padded reference arrays (static shape from config.max_references)
 # Stored as uint8 in the database, converted to float32 for JAX ops.
