@@ -19,16 +19,19 @@ class AtomDecomposition:
         Builds the Boolean mask representing which atoms contributed to which fingerprint bits.
         Returns a float array to avoid casting inside the JIT'd `per_atom_neff` kernels.
         """
+        import numpy as np
+        
         n_atoms = self.mol.GetNumAtoms()
         # Initialize as float32 to match JAX computation dtype expectations
-        mask = jnp.zeros((n_atoms, self.fp_size), dtype=jnp.float32)
+        # Use simple numpy since this is precomputation on the CPU 
+        mask = np.zeros((n_atoms, self.fp_size), dtype=np.float32)
 
         for bit, envs in self.info.items():
             for env in envs:
                 center_atom_idx = env[0]
                 # We could set bits for all atoms in the environment (if we calculate shortest paths),
                 # but standard Morgan atom-attribution maps bits to their center atom.
-                mask = mask.at[center_atom_idx, bit].set(1.0)
+                mask[center_atom_idx, bit] = 1.0
                 
         return mask
 

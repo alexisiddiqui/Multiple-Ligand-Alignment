@@ -34,7 +34,9 @@ def test_compute_neff_basic(sample_query, sample_db):
         weighting="inverse_degree"
     )
     
-    result = compute_neff(sample_query, sample_db, config)
+    from ligand_neff.compute import prepare_query_data
+    query_data = prepare_query_data(sample_query, config)
+    result = compute_neff(query_data, config, sample_db, query_mol=sample_query)
     
     assert result.query_mol is sample_query
     assert result.global_neff > 0.0
@@ -57,17 +59,20 @@ def test_jit_reused_on_subsequent_calls(sample_query, sample_db):
         lambda_mode="fixed",
         lambda_fixed=1.0
     )
+    from ligand_neff.compute import prepare_query_data
     
     # Query 1 (Triggers Compilation)
     q1 = Chem.MolFromSmiles("c1ccccc1") # Benzene (6 heavy atoms)
+    data1 = prepare_query_data(q1, config)
     start_t1 = time.time()
-    res1 = compute_neff(q1, sample_db, config)
+    res1 = compute_neff(data1, config, sample_db)
     t1 = time.time() - start_t1
     
     # Query 2 (Different molecule, same atom count = 6) - Should hit JIT cache
     q2 = Chem.MolFromSmiles("c1ccncc1") # Pyridine (6 heavy atoms)
+    data2 = prepare_query_data(q2, config)
     start_t2 = time.time()
-    res2 = compute_neff(q2, sample_db, config)
+    res2 = compute_neff(data2, config, sample_db)
     t2 = time.time() - start_t2
     
     assert res1.global_neff > 0

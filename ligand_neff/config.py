@@ -33,6 +33,7 @@ class NeffConfig:
     radius_weights: tuple[float, ...] = (0.2, 0.5, 0.3)
 
     # ── Normalisation ────────────────────────────────────────────
+    atom_norm: Literal["none", "q_length", "sqrt(q_length)"] = "sqrt(q_length)"
     lambda_mode: Literal["fixed", "adaptive"] = "adaptive"
     lambda_fixed: float = 10.0                  # Only used if lambda_mode="fixed"
     lambda_quantile: float = 0.5                # Median of global Neff for adaptive

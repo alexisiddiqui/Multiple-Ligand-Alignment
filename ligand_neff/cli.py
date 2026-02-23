@@ -51,7 +51,9 @@ def main():
         
         # Run calculation
         print("Computing Neff scores...")
-        result = compute_neff(query_mol, db_mols=db_mols, config=config, precomputed_db=precomputed_db)
+        from ligand_neff.compute import prepare_query_data
+        query_data = prepare_query_data(query_mol, config)
+        result = compute_neff(query_data, config=config, db_mols=db_mols, precomputed_db=precomputed_db, query_mol=query_mol)
         
         print("\n--- Results ---")
         print(f"Global Neff:       {result.global_neff:.4f}")

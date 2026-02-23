@@ -6,7 +6,7 @@ from beartype import beartype as typechecker
 from functools import partial
 
 
-@partial(jax.jit, static_argnames=("min_overlap",))
+@partial(jax.jit, static_argnames=("min_overlap", "atom_norm"))
 @chex.assert_max_traces(n=50)
 @jaxtyped(typechecker=typechecker)
 def per_atom_neff_single_radius(
@@ -14,6 +14,7 @@ def per_atom_neff_single_radius(
     ref_fps: Float[Array, "max_refs fp_size"],
     weights: Float[Array, " max_refs"],
     min_overlap: float = 0.5,
+    atom_norm: str = "sqrt(q_length)",
 ) -> Float[Array, " n_atoms"]:
     """
     Per-atom Neff at a single Morgan radius.
@@ -38,5 +39,14 @@ def per_atom_neff_single_radius(
 
     gated = jnp.where(overlap >= min_overlap, overlap, 0.0)
     neff = jnp.dot(gated, weights)
+
+    if atom_norm == "none":
+        pass
+    elif atom_norm == "q_length":
+        neff = neff / atom_counts.squeeze(-1)
+    elif atom_norm == "sqrt(q_length)":
+        neff = neff / jnp.sqrt(atom_counts.squeeze(-1))
+    else:
+        raise ValueError(f"Unknown atom_norm: {atom_norm}")
 
     return neff

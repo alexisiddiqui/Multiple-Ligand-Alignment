@@ -1,0 +1,27 @@
+fingerprint:
+  fp_radii: [1, 2, 3]
+  fp_size: 4096
+  use_chirality: false
+  use_features: false
+
+filtering:
+  tanimoto_inclusion: 0.3
+  max_references: 10000
+
+weighting:
+  cluster_threshold: 0.7
+  weighting: inverse_degree
+  inverse_degree_chunk_size: 2048
+
+per_atom:
+  coverage_metric: overlap
+  min_overlap: 0.5
+
+aggregation:
+  aggregation: minimum
+  radius_weights: [0.2, 0.5, 0.3]
+
+normalisation:
+  atom_norm: "sqrt(q_length)"
+  lambda_mode: adaptive
+  lambda_quantile: 0.5

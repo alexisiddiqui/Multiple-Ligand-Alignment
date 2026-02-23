@@ -32,6 +32,17 @@ Scalar           = Float[Array, ""]
 IntScalar        = Int[Array, ""]   # e.g. n_valid stored as JAX int32
 
 
+@chex.dataclass(frozen=True)
+class QueryData:
+    """
+    Precomputed fingerprints and atom masks for a query molecule.
+    Using dicts for radii to keep it flexible, but could be a stacked tensor.
+    """
+    fps: dict[int, np.ndarray]        # radius -> fingerprint (1D)
+    atom_masks: dict[int, np.ndarray] # radius -> atom mask (2D: n_atoms x fp_size)
+    n_atoms: int
+
+
 @chex.dataclass(frozen=True, mappable_dataclass=False)
 class NeffResult:
     """

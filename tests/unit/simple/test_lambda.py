@@ -19,16 +19,18 @@ def test_adaptive_lambda_scaling():
     )
     
     query = Chem.MolFromSmiles("c1ccccc1O") # Phenol
+    from ligand_neff.compute import prepare_query_data
+    query_data = prepare_query_data(query, config)
     
     # Small DB
     # We use valid straight chain alkanes C3 ... C11
     small_db = [Chem.MolFromSmiles("C" * i) for i in range(3, 12)]
-    res_small = compute_neff(query, small_db, config)
+    res_small = compute_neff(query_data, config, small_db, query_mol=query)
     
     # "Large" DB (just duplicating for test speed, but will have higher sum)
     # Using same query means coverage will be similar, but more refs = higher neff sum
     large_db = [Chem.MolFromSmiles("CCO")] * 100
-    res_large = compute_neff(query, large_db, config)
+    res_large = compute_neff(query_data, config, large_db, query_mol=query)
     
     assert res_small.lambda_value > 0
     assert res_large.lambda_value > 0

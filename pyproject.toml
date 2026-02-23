@@ -12,7 +12,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "rdkit",
-    "jax[cpu]",
+    "jax==0.5.0",
     "jaxlib",
     "numpy>=1.24",
     "chex>=0.1.87",
@@ -20,6 +20,9 @@ dependencies = [
     "beartype>=0.18",
     "pyyaml",
     "pytest>=9.0.2",
+    "pandas>=2.3.3",
+    "matplotlib>=3.10.8",
+    "jax-tqdm>=0.4.0",
 ]
 
 [tool.pytest.ini_options]
