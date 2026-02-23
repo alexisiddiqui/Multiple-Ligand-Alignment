@@ -1,5 +1,5 @@
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator, AdditionalOutput
 import jax.numpy as jnp
 from jaxtyping import Float, Array
 import chex
@@ -40,14 +40,15 @@ def decompose(mol: Chem.Mol, radius: int, fp_size: int = 2048, use_chirality: bo
     """Decompose molecule into an atom-to-bit mapping at the given Morgan radius."""
     info = {}
     
-    # Generate Morgan fingerprint with bit info
-    _ = AllChem.GetMorganFingerprintAsBitVect(
-        mol, 
+    gen = GetMorganGenerator(
         radius=radius,
-        nBits=fp_size,
-        useChirality=use_chirality,
-        useFeatures=use_features,
-        bitInfo=info
+        fpSize=fp_size,
+        includeChirality=use_chirality,
+        useBondTypes=not use_features,
     )
+    ao = AdditionalOutput()
+    ao.AllocateBitInfoMap()
+    gen.GetFingerprint(mol, additionalOutput=ao)
+    info = ao.GetBitInfoMap()
     
     return AtomDecomposition(mol, radius, fp_size, info)

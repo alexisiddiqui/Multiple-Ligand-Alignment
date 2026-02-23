@@ -18,7 +18,7 @@ def plot_neff_vs_bfactors():
     df = pd.read_csv(results_csv)
     
     # Drop rows where correlation couldn't be computed
-    df = df.dropna(subset=["spearman_r", "global_confidence"])
+    df = df.dropna(subset=["spearman_r", "global_neff"])
     
     if df.empty:
         print("No valid data to plot.")
@@ -28,9 +28,9 @@ def plot_neff_vs_bfactors():
     
     # Scatter plot
     scatter = plt.scatter(
-        df["global_confidence"], 
+        df["global_neff"], 
         df["spearman_r"], 
-        c=df["global_confidence"], # Color by confidence also
+        c=df["global_neff"], # Color by confidence also
         cmap="plasma", 
         alpha=0.7,
         edgecolors="w",
@@ -42,7 +42,7 @@ def plot_neff_vs_bfactors():
     for i, row in df.iterrows():
         plt.annotate(
             f"{row['pdb_id']}:{row['ligand_id']}",
-            (row["global_confidence"], row["spearman_r"]),
+            (row["global_neff"], row["spearman_r"]),
             xytext=(5, 5), textcoords="offset points",
             fontsize=8, alpha=0.8
         )
@@ -59,9 +59,9 @@ def plot_neff_vs_bfactors():
     
     # Optional Trendline
     if len(df) > 1:
-        z = np.polyfit(df["global_confidence"], df["spearman_r"], 1)
+        z = np.polyfit(df["global_neff"], df["spearman_r"], 1)
         p = np.poly1d(z)
-        plt.plot(df["global_confidence"], p(df["global_confidence"]), "r--", alpha=0.5, label=f"Trendline")
+        plt.plot(df["global_neff"], p(df["global_neff"]), "r--", alpha=0.5, label=f"Trendline")
         plt.legend(loc="lower left")
     
     out_path = DATA_DIR / "cdk2_bfactor_scatter.png"

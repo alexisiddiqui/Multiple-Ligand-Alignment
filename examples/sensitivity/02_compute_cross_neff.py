@@ -100,22 +100,32 @@ def run_config(config_path: Path) -> None:
     
     print("  Initializing NeffEngines...")
     from ligand_neff.engine import NeffEngine
+    from rdkit import Chem
     engines = {
         receptor: NeffEngine(config, precomputed_db=precomputed_dbs[receptor]) 
         for receptor in RECEPTORS
     }
     
+    # Define the queries: the cognate ligands for each receptor
+    cognate_queries = {}
+    
+    pr_mol = Chem.MolFromSmiles("CC(=O)[C@H]1CC[C@H]2[C@@H]3CCC4=CC(=O)CC[C@]4(C)[C@H]3CC[C@]12C")
+    pr_mol.SetProp("_Name", "Progesterone")
+    cognate_queries["PR"] = pr_mol
+    
+    ar_mol = Chem.MolFromSmiles("C[C@]12CC[C@H]3[C@@H](CCC4=CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O")
+    ar_mol.SetProp("_Name", "Testosterone")
+    cognate_queries["AR"] = ar_mol
+    
     receptor_prepared_queries: dict[str, list] = {}
     for receptor in RECEPTORS:
-        receptor_prepared_queries[receptor] = [
-            engines[receptor].prepare_query(mol) 
-            for mol in tqdm(receptor_mols[receptor], desc=f"  Precomputing {receptor}")
-        ]
+        mol = cognate_queries[receptor]
+        receptor_prepared_queries[receptor] = [engines[receptor].prepare_query(mol)]
 
     for source_rec in RECEPTORS:
-        mols = receptor_mols[source_rec]
+        mols = [cognate_queries[source_rec]]
         prepared_queries = receptor_prepared_queries[source_rec]
-        desc = f"  {source_rec} ligands"
+        desc = f"  {source_rec} cognate ligand"
 
         for i, (query_mol, prepared) in enumerate(tqdm(zip(mols, prepared_queries), desc=desc, total=len(mols))):
             mol_id = (

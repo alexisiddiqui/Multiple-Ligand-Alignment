@@ -15,8 +15,8 @@ from ligand_neff.neff.pipeline import compute_neff_core
 class PreparedQuery:
     """Query data prepared and stacked on device for the Neff core kernel."""
     q_fps: jnp.ndarray          # (n_radii, fp_size)
-    atom_masks: jnp.ndarray     # (n_radii, n_atoms, fp_size)
-    n_atoms: int
+    atom_masks: jnp.ndarray     # (n_radii, max_atoms, fp_size)  -- padded
+    n_atoms: int                # true atom count before padding
     query_mol: Chem.Mol | None = None
 
 class NeffEngine:
@@ -32,9 +32,12 @@ class NeffEngine:
         db_mols: Optional[Sequence[Chem.Mol]] = None,
         dtype=jnp.float32,
         compile_on_init: bool = True,
+        max_atoms: int = 64,
     ):
         self.config = config
         self.fp_radii = tuple(config.fp_radii)
+        # Pad all atom_masks to this fixed size so JAX never retraces for new n_atoms shapes.
+        self.max_atoms = max_atoms
         
         # 1. Build or extract DbCache
         if isinstance(precomputed_db, DbCache):
@@ -49,11 +52,12 @@ class NeffEngine:
         else:
             raise ValueError("Must provide either precomputed_db or db_mols")
 
-        # 3. Optional warmup
+        # 3. Optional warmup — compile with the fixed max_atoms shape
         if compile_on_init:
-            self.warmup(n_atoms_hint=32)
+            self.warmup(n_atoms_hint=self.max_atoms)
 
-    def warmup(self, n_atoms_hint: int = 32):
+    def warmup(self, n_atoms_hint: int | None = None):
+        n_atoms_hint = n_atoms_hint if n_atoms_hint is not None else self.max_atoms
         q = jnp.zeros((len(self.fp_radii), self.config.fp_size), dtype=jnp.float32)
         am = jnp.zeros((len(self.fp_radii), n_atoms_hint, self.config.fp_size), dtype=jnp.float32)
         
@@ -77,14 +81,29 @@ class NeffEngine:
         )
 
     def prepare_query(self, query_mol: Chem.Mol, query_data: Optional[QueryData] = None) -> PreparedQuery:
-        """Prepares a single query molecule into stacked JAX arrays."""
+        """Prepares a single query molecule into stacked JAX arrays, padded to max_atoms."""
         if query_data is None:
             query_data = prepare_query_data(query_mol, self.config)
-            
+
+        n_atoms = query_data.n_atoms
+        if n_atoms > self.max_atoms:
+            raise ValueError(
+                f"Query molecule has {n_atoms} atoms, which exceeds max_atoms={self.max_atoms}. "
+                "Increase max_atoms when constructing NeffEngine."
+            )
+
         q_fps = jnp.stack([jnp.asarray(query_data.fps[r], dtype=jnp.float32) for r in self.fp_radii], axis=0)
-        atom_masks = jnp.stack([jnp.asarray(query_data.atom_masks[r], dtype=jnp.float32) for r in self.fp_radii], axis=0)
-        
-        return PreparedQuery(q_fps=q_fps, atom_masks=atom_masks, n_atoms=query_data.n_atoms, query_mol=query_mol)
+
+        # Pad each atom_mask to (max_atoms, fp_size) so JAX always sees the same shape
+        padded_masks = []
+        for r in self.fp_radii:
+            mask = jnp.asarray(query_data.atom_masks[r], dtype=jnp.float32)  # (n_atoms, fp_size)
+            pad_rows = self.max_atoms - n_atoms
+            mask_padded = jnp.pad(mask, ((0, pad_rows), (0, 0)))              # (max_atoms, fp_size)
+            padded_masks.append(mask_padded)
+        atom_masks = jnp.stack(padded_masks, axis=0)                          # (n_radii, max_atoms, fp_size)
+
+        return PreparedQuery(q_fps=q_fps, atom_masks=atom_masks, n_atoms=n_atoms, query_mol=query_mol)
 
     def compute_prepared(self, prepared: PreparedQuery) -> NeffResult:
         """Runs the fully JITted JAX pipeline on a prepared query."""
@@ -107,9 +126,10 @@ class NeffEngine:
             lambda_mode=self.config.lambda_mode,
         )
 
-        combined_np = np.asarray(combined)
-        conf_np = np.asarray(conf)
-        per_r_np = np.asarray(per_r)
+        n = prepared.n_atoms  # true atom count; slice off padding
+        combined_np = np.asarray(combined)[:n]
+        conf_np     = np.asarray(conf)[:n]
+        per_r_np    = np.asarray(per_r)[:, :n]
 
         neff_dict = {r: per_r_np[i] for i, r in enumerate(self.fp_radii)}
 

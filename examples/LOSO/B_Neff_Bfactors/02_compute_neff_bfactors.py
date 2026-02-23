@@ -47,7 +47,9 @@ def run_neff_bfactors():
     
     print("Initializing NeffEngine for PDBs...")
     from ligand_neff.engine import NeffEngine
-    engine = NeffEngine(config, precomputed_db=precomputed)
+    max_atoms = max(mol.GetNumAtoms() for mol in mols)
+    print(f"Max atoms in dataset: {max_atoms} — using as padding size.")
+    engine = NeffEngine(config, precomputed_db=precomputed, max_atoms=max_atoms)
     
     print("Precomputing query data...")
     all_prepared_queries = [engine.prepare_query(mol) for mol in tqdm(mols, desc="Precomputing")]

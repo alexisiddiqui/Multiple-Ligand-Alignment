@@ -1,5 +1,5 @@
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 import numpy as np
 
 
@@ -23,13 +23,13 @@ def encode_molecule(
     Returns:
         np.ndarray of uint8 containing the fingerprint bits.
     """
-    fp = AllChem.GetMorganFingerprintAsBitVect(
-        mol, 
+    gen = GetMorganGenerator(
         radius=radius,
-        nBits=fp_size,
-        useChirality=use_chirality,
-        useFeatures=use_features
+        fpSize=fp_size,
+        includeChirality=use_chirality,
+        useBondTypes=not use_features,
     )
+    fp = gen.GetFingerprint(mol)
     
     # Convert RDKit ExplicitBitVect to numpy array 
     # Store as uint8 to save memory on disk/CPU (as specified in _types.py)
