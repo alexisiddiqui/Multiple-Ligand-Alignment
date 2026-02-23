@@ -47,12 +47,16 @@ def test_leave_one_out_neff(cdk2_mols, cdk2_precomputed, cdk2_config, cdk2_data_
         from examples.LOSO.common.utils import create_loso_db
         loso_db = create_loso_db(cdk2_precomputed, cdk2_config.fp_radii, i)
             
+        from ligand_neff.compute import prepare_query_data
+        query_data = prepare_query_data(query, cdk2_config)
+        
         # Run pipeline
         res = compute_neff(
-            query=query,
+            query_data=query_data,
             db_mols=None, # use precomputed
             config=cdk2_config,
-            precomputed_db=loso_db
+            precomputed_db=loso_db,
+            query_mol=query
         )
         
         processed_results.append({

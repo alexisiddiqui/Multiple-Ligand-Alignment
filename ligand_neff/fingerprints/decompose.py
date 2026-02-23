@@ -33,7 +33,7 @@ class AtomDecomposition:
                 # but standard Morgan atom-attribution maps bits to their center atom.
                 mask[center_atom_idx, bit] = 1.0
                 
-        return mask
+        return jnp.array(mask)
 
 
 def decompose(mol: Chem.Mol, radius: int, fp_size: int = 2048, use_chirality: bool = False, use_features: bool = False) -> AtomDecomposition:
