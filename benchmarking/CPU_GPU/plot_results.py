@@ -2,9 +2,11 @@
 """Plot CPU vs GPU benchmark results from a CSV produced by benchmark_cpu_gpu.py.
 
 Generates:
-  1. Grouped bar chart — per-stage mean time, CPU vs GPU, for each (n_db, fp_size).
-  2. Line chart       — total pipeline time vs n_db, separately for each fp_size.
-  3. Speedup heatmap  — GPU speedup factor across (n_db × stage).
+  1. Grouped bar chart      — per-stage mean time, CPU vs GPU, for each (n_db, fp_size).
+  2. Line chart             — total pipeline time vs n_db, separately for each fp_size.
+  3. Speedup heatmap        — GPU speedup factor (cpu/gpu) across (n_db × stage).
+  4. Abs-improvement heatmap — GPU time saving in ms (cpu − gpu) across (n_db × stage),
+                               colour scale centred at 0 ms.
 
 Usage
 -----
@@ -236,6 +238,84 @@ def plot_speedup_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
         print(f"  Saved: {fname}")
 
 
+# ── Plot 4: Absolute time-improvement heatmap ────────────────────────────────
+
+def plot_abs_improvement_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
+    """For each fp_size, plot a heatmap of absolute GPU time saving in ms.
+
+    Value = cpu_time - gpu_time.  Positive (blue) means GPU was faster;
+    negative (red) means GPU was slower.  Colour scale is always centred at 0.
+    """
+    devices = df["device"].unique()
+    gpu_devs = [d for d in devices if d.lower() in ("gpu", "metal")]
+    if not gpu_devs:
+        print("  No GPU device in data — skipping abs-improvement heatmap.")
+        return
+
+    gpu_dev = gpu_devs[0]
+    cpu_dev = "cpu"
+    fp_sizes = sorted(df["fp_size"].unique())
+    phases = [p for p in PHASE_ORDER if p in df["phase"].values]
+
+    for fp_size in fp_sizes:
+        sub = df[df["fp_size"] == fp_size]
+        n_dbs = sorted(sub["n_db"].unique())
+
+        diff_matrix = np.zeros((len(n_dbs), len(phases)))
+        for i, n_db in enumerate(n_dbs):
+            for j, phase in enumerate(phases):
+                cpu_row = sub[
+                    (sub["device"] == cpu_dev) & (sub["n_db"] == n_db) & (sub["phase"] == phase)
+                ]
+                gpu_row = sub[
+                    (sub["device"] == gpu_dev) & (sub["n_db"] == n_db) & (sub["phase"] == phase)
+                ]
+                if not cpu_row.empty and not gpu_row.empty:
+                    cpu_t = float(cpu_row["mean_ms"].values[0])
+                    gpu_t = float(gpu_row["mean_ms"].values[0])
+                    diff_matrix[i, j] = cpu_t - gpu_t  # positive = GPU faster
+
+        # Symmetric colour scale centred at 0
+        abs_max = np.abs(diff_matrix).max()
+        abs_max = abs_max if abs_max > 0 else 1.0  # avoid zero-range scale
+
+        fig, ax = plt.subplots(figsize=(10, max(3, len(n_dbs) * 0.7 + 2)))
+        im = ax.imshow(
+            diff_matrix, aspect="auto", cmap="RdBu",
+            vmin=-abs_max, vmax=abs_max,
+        )
+        ax.set_xticks(np.arange(len(phases)))
+        ax.set_xticklabels(
+            [STAGE_LABEL.get(p, p) for p in phases], rotation=30, ha="right", fontsize=9
+        )
+        ax.set_yticks(np.arange(len(n_dbs)))
+        ax.set_yticklabels([f"n_db={n}" for n in n_dbs], fontsize=9)
+        ax.set_title(
+            f"GPU Absolute Time Saving (CPU − GPU, ms)  |  fp_size={fp_size}",
+            fontsize=12, fontweight="bold",
+        )
+
+        cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label("Time saving (ms)  [blue = GPU faster]", fontsize=10)
+
+        # Annotate cells
+        for i in range(len(n_dbs)):
+            for j in range(len(phases)):
+                v = diff_matrix[i, j]
+                sign = "+" if v >= 0 else ""
+                ax.text(
+                    j, i, f"{sign}{v:.1f}",
+                    ha="center", va="center", fontsize=8,
+                    color="white" if abs(v) > 0.6 * abs_max else "black",
+                )
+
+        fig.tight_layout()
+        fname = out_dir / f"abs_improvement_heatmap_fp{fp_size}.png"
+        fig.savefig(fname, dpi=150)
+        plt.close(fig)
+        print(f"  Saved: {fname}")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -272,6 +352,9 @@ def main() -> None:
 
     print("\n── Speedup heatmap ─────────────────────────────────────────────────────")
     plot_speedup_heatmap(df, out_dir)
+
+    print("\n── Absolute time-improvement heatmap ───────────────────────────────────")
+    plot_abs_improvement_heatmap(df, out_dir)
 
     print(f"\nAll plots saved to: {out_dir}")
 

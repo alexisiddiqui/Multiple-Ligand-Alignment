@@ -212,3 +212,6 @@ __marimo__/
 *.DS_Store
 
 **__pycache__**
+
+*.sdf
+*.pkl

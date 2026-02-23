@@ -1,6 +1,6 @@
 fingerprint:
   fp_radii: [1, 2, 3]
-  fp_size: 2048
+  fp_size: 8192
   use_chirality: false
   use_features: false
 
@@ -18,7 +18,7 @@ per_atom:
   min_overlap: 0.5
 
 aggregation:
-  aggregation: minimum
+  aggregation: geometric
   radius_weights: [0.2, 0.5, 0.3]
 
 normalisation:

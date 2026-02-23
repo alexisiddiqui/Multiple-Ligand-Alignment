@@ -1,3 +1,4 @@
+import argparse
 import urllib.request
 import json
 import time
@@ -7,6 +8,7 @@ from rdkit import Chem
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
+OUT_FILE = DATA_DIR / "pdb_ligands.pkl"
 
 # Exclude lists for biological cofactors and crystallization buffers/salts
 EXCLUDED_COMPONENTS = {
@@ -14,6 +16,22 @@ EXCLUDED_COMPONENTS = {
     "BME", "PEG", "PGE", "PG4", "1PE", "NHE", "TRS", "MES", "HEZ", "EPE",
     "ATP", "ADP", "AMP", "GTP", "GDP", "GMP", "NAD", "NADH", "NADP", "FAD"
 }
+
+
+def load_existing_results() -> list[dict]:
+    """Load previously saved ligand results from disk, if any."""
+    if OUT_FILE.exists():
+        with open(OUT_FILE, "rb") as f:
+            results = pickle.load(f)
+        print(f"Loaded {len(results)} existing ligands from {OUT_FILE}")
+        return results
+    return []
+
+
+def existing_pdb_ids(results: list[dict]) -> set[str]:
+    """Return the set of PDB IDs already present in saved results."""
+    return {r["pdb_id"] for r in results}
+
 
 def search_rcsb_cdk2(limit: int = 100) -> list[str]:
     """Search for CDK2 PDB IDs."""
@@ -118,22 +136,45 @@ def extract_ligand_pdb_block(pdb_text: str, comp_ids: list[str]) -> dict:
             
     return ligand_blocks
 
-def fetch_pdb_ligands():
-    """Main execution to fetch and process PDBs."""
+def fetch_pdb_ligands(overwrite: bool = False):
+    """Main execution to fetch and process PDBs.
+
+    Args:
+        overwrite: If True, discard any existing data and re-fetch everything.
+                   If False (default), load existing data and only fetch new PDBs.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ── Load or reset existing results ──────────────────────────────────
+    if overwrite:
+        print("--overwrite set: discarding existing data and re-fetching all.")
+        existing_results: list[dict] = []
+    else:
+        existing_results = load_existing_results()
+
+    already_have = existing_pdb_ids(existing_results)
     
     pdb_ids = search_rcsb_cdk2(limit=500)
     if not pdb_ids:
         print("No PDBs found.")
         return
-        
-    pdb_to_ligands = find_ligands_in_pdbs(pdb_ids)
+
+    # ── Filter out PDB IDs we already have ──────────────────────────────
+    new_pdb_ids = [pid for pid in pdb_ids if pid not in already_have]
+    if not new_pdb_ids:
+        print(f"All {len(pdb_ids)} PDB IDs already present in dataset – nothing to fetch.")
+        return
+
+    print(f"{len(pdb_ids)} PDB IDs from RCSB, {len(already_have)} already cached, "
+          f"{len(new_pdb_ids)} new to fetch.")
+
+    pdb_to_ligands = find_ligands_in_pdbs(new_pdb_ids)
     
-    print(f"\nIdentified target ligands for {len(pdb_to_ligands)} PDBs:")
+    print(f"\nIdentified target ligands for {len(pdb_to_ligands)} new PDBs:")
     for pdb_id, ligands in pdb_to_ligands.items():
         print(f"  {pdb_id}: {', '.join(ligands)}")
         
-    results = []
+    new_results = []
     
     for pdb_id, targets in pdb_to_ligands.items():
         print(f"Downloading PDB structure for {pdb_id}...")
@@ -167,7 +208,7 @@ def fetch_pdb_ligands():
                 print(f"  Failed to extract B-factors for {pdb_id}:{comp_id}")
                 continue
                 
-            results.append({
+            new_results.append({
                 "pdb_id": pdb_id,
                 "ligand_id": comp_id,
                 "smiles": Chem.MolToSmiles(mol),
@@ -179,12 +220,29 @@ def fetch_pdb_ligands():
             break
             
         time.sleep(0.5)
-        
-    print(f"\nTotal valid extracted ligands: {len(results)}")
-    out_file = DATA_DIR / "pdb_ligands.pkl"
-    with open(out_file, "wb") as f:
-        pickle.dump(results, f)
-    print(f"Saved to {out_file}")
+
+    # ── Merge and save ──────────────────────────────────────────────────
+    combined = existing_results + new_results
+    print(f"\nNewly fetched: {len(new_results)} | Previously cached: {len(existing_results)} | "
+          f"Total: {len(combined)}")
+
+    with open(OUT_FILE, "wb") as f:
+        pickle.dump(combined, f)
+    print(f"Saved to {OUT_FILE}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fetch CDK2 PDB ligands with B-factors from RCSB."
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Discard existing cached data and re-fetch everything from scratch.",
+    )
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    fetch_pdb_ligands()
+    args = parse_args()
+    fetch_pdb_ligands(overwrite=args.overwrite)

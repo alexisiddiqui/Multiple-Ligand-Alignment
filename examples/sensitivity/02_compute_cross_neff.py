@@ -96,7 +96,7 @@ def run_config(config_path: Path) -> None:
         print(f"    {receptor}: {len(mols)} ligands loaded.")
 
     # ── 2. Cross-compute Neff ─────────────────────────────────────────────────
-    results: []
+    results = []
     from ligand_neff.compute import prepare_query_data
     
     receptor_query_data: dict[str, list] = {}
