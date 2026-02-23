@@ -25,7 +25,7 @@ TARGETS = {
 
 BASE_URL = "https://www.ebi.ac.uk/chembl/api/data/activity"
 MIN_PCHEMBL = 6.0    # IC50 ≤ 1 µM
-MAX_LIGANDS = 500    # Cap per receptor to keep runtimes manageable
+MAX_LIGANDS = 1000    # Cap per receptor to keep runtimes manageable
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"

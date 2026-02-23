@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from pathlib import Path
 from ligand_neff.config import load_config
-from examples.LOSO.common.utils import compute_mean_tanimotos, load_mols_from_smi
+from examples.LOSO.common.utils import compute_mean_tanimotos_against_db, load_mols_from_smi
+import numpy as np
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -27,14 +28,14 @@ def _add_corr_annotation(ax, x, y):
     )
 
 
-def plot_results():
-    results_path = DATA_DIR / "cdk2_results.csv"
+def plot_ccd_results():
+    results_path = DATA_DIR / "cdk2_ccd_results.csv"
     activity_path = DATA_DIR / "cdk2_activity.csv"
     smi_path = DATA_DIR / "cdk2_ligands.smi"
     config_path = COMMON_DIR / "cdk2_config.yaml"
 
     if not results_path.exists():
-        print(f"Results CSV not found at {results_path}. Run 02_run_loso.py first.")
+        print(f"Results CSV not found at {results_path}. Run 04_run_CCD.py first.")
         return
 
     df = pd.read_csv(results_path)
@@ -52,18 +53,25 @@ def plot_results():
     if len(actual_ids) == len(df):
         df["id"] = actual_ids
 
+
     # ── Tanimoto similarity ──────────────────────────────────────────────────
+    if "mean_tanimoto" in df.columns:
+        df = df.drop(columns=["mean_tanimoto"])
+        
     if "mean_tanimoto" not in df.columns:
-        print("Computing mean Tanimoto similarities...")
+        print("Computing mean Tanimoto similarities (against CCD data)...")
         config = load_config(config_path)
         mols = load_mols_from_smi(smi_path)
+        
+        ccd_db_path = COMMON_DIR / "components-pub.npz"
+        precomputed_ccd = dict(np.load(ccd_db_path))
 
         if "idx" in df.columns:
             subset_mols = [mols[i] for i in df["idx"]]
         else:
             subset_mols = mols[: len(df)]
 
-        df["mean_tanimoto"] = compute_mean_tanimotos(subset_mols, config)
+        df["mean_tanimoto"] = compute_mean_tanimotos_against_db(subset_mols, precomputed_ccd, config)
         df.to_csv(results_path, index=False)  # save for next time
 
     # ── Activity (pChEMBL) ───────────────────────────────────────────────────
@@ -73,6 +81,7 @@ def plot_results():
     if "pchembl_value" not in df.columns:
         if activity_path.exists():
             print("Merging pChEMBL activity values from cdk2_activity.csv...")
+
             act_df = pd.read_csv(activity_path)
             df = df.merge(act_df, on="id", how="left")
             df.to_csv(results_path, index=False)  # save for next time
@@ -84,7 +93,7 @@ def plot_results():
             )
 
     # ── Plot 1: Confidence vs Tanimoto ───────────────────────────────────────
-    out_scatter = DATA_DIR / "cdk2_scatter.png"
+    out_scatter = DATA_DIR / "cdk2_ccd_scatter.png"
     fig, ax = plt.subplots(figsize=(10, 7))
     scatter = ax.scatter(
         df["global_neff"],
@@ -97,8 +106,8 @@ def plot_results():
     )
     fig.colorbar(scatter, ax=ax, label="Mean Tanimoto Similarity")
     ax.set_xlabel("Global Neff Confidence (0–1)")
-    ax.set_ylabel("Mean Tanimoto Similarity to Reference Set")
-    ax.set_title("CDK2 LOSO: Confidence vs Dataset Similarity")
+    ax.set_ylabel("Mean Tanimoto Similarity to Target Dataset")
+    ax.set_title("CDK2 vs CCD: Confidence vs CCD Dataset Similarity")
     ax.grid(True, linestyle="--", alpha=0.3)
     _add_corr_annotation(ax, df["global_neff"], df["mean_tanimoto"])
     fig.tight_layout()
@@ -112,7 +121,7 @@ def plot_results():
         if len(act_df_plot) < 2:
             print("Not enough activity data to plot activity vs Neff.")
         else:
-            out_activity = DATA_DIR / "cdk2_activity_vs_neff.png"
+            out_activity = DATA_DIR / "cdk2_ccd_activity_vs_neff.png"
             fig, axes = plt.subplots(1, 3, figsize=(24, 7))
 
             # --- 2a: global_neff vs pChEMBL ---
@@ -129,7 +138,7 @@ def plot_results():
             fig.colorbar(sc, ax=ax, label="pChEMBL Value")
             ax.set_xlabel("Global Neff Confidence (0–1)")
             ax.set_ylabel("Activity (pChEMBL)")
-            ax.set_title("CDK2 LOSO: Neff Confidence vs Activity")
+            ax.set_title("CDK2 vs CCD: Neff Confidence vs Activity")
             ax.grid(True, linestyle="--", alpha=0.3)
             _add_corr_annotation(ax, act_df_plot["global_neff"], act_df_plot["pchembl_value"])
 
@@ -148,7 +157,7 @@ def plot_results():
             fig.colorbar(sc2, ax=ax, label="pChEMBL Value")
             ax.set_xlabel("Global Confidence (normalised)")
             ax.set_ylabel("Activity (pChEMBL)")
-            ax.set_title("CDK2 LOSO: Global Confidence vs Activity")
+            ax.set_title("CDK2 vs CCD: Global Confidence vs Activity")
             ax.grid(True, linestyle="--", alpha=0.3)
             _add_corr_annotation(ax, act_df_plot[x_col], act_df_plot["pchembl_value"])
 
@@ -164,13 +173,13 @@ def plot_results():
                 linewidths=0.5,
             )
             fig.colorbar(sc3, ax=ax, label="pChEMBL Value")
-            ax.set_xlabel("Mean Tanimoto Similarity")
+            ax.set_xlabel("Mean Tanimoto Similarity to CCD")
             ax.set_ylabel("Activity (pChEMBL)")
-            ax.set_title("CDK2 LOSO: Dataset Tanimoto vs Activity")
+            ax.set_title("CDK2 vs CCD: Dataset Tanimoto vs Activity")
             ax.grid(True, linestyle="--", alpha=0.3)
             _add_corr_annotation(ax, act_df_plot["mean_tanimoto"], act_df_plot["pchembl_value"])
 
-            fig.suptitle("CDK2 Activity vs Neff Scores", fontsize=14, fontweight="bold")
+            fig.suptitle("CDK2 Activity vs Neff Scores (from CCD Database)", fontsize=14, fontweight="bold")
             fig.tight_layout()
             fig.savefig(out_activity, dpi=300)
             plt.close(fig)
@@ -179,10 +188,10 @@ def plot_results():
             # Print summary statistics
             pearson_r, pearson_p = stats.pearsonr(act_df_plot["global_neff"], act_df_plot["pchembl_value"])
             spearman_r, spearman_p = stats.spearmanr(act_df_plot["global_neff"], act_df_plot["pchembl_value"])
-            print(f"\nActivity vs Neff correlations (n={len(act_df_plot)}):")
+            print(f"\nActivity vs Neff correlations against CCD (n={len(act_df_plot)}):")
             print(f"  Pearson  r = {pearson_r:.3f}  (p = {pearson_p:.2e})")
             print(f"  Spearman ρ = {spearman_r:.3f}  (p = {spearman_p:.2e})")
 
 
 if __name__ == "__main__":
-    plot_results()
+    plot_ccd_results()
