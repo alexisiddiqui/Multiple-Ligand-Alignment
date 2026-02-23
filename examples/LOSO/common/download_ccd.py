@@ -1,8 +1,14 @@
-import requests
+import urllib.request
 import gzip
 import shutil
 from pathlib import Path
 from tqdm import tqdm
+
+class DownloadProgressBar(tqdm):
+    def update_to(self, b=1, bsize=1, tsize=None):
+        if tsize is not None:
+            self.total = tsize
+        self.update(b * bsize - self.n)
 
 def download_ccd():
     """Download and decompress the PDB Chemical Component Dictionary (CCD)."""
@@ -13,20 +19,8 @@ def download_ccd():
 
     print(f"Downloading CCD from {url}...")
     
-    # Download with progress bar
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get('content-length', 0))
-    
-    with open(gz_path, "wb") as f, tqdm(
-        desc="Downloading",
-        total=total_size,
-        unit='iB',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for data in response.iter_content(chunk_size=1024):
-            size = f.write(data)
-            bar.update(size)
+    with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=url.split('/')[-1]) as t:
+        urllib.request.urlretrieve(url, filename=gz_path, reporthook=t.update_to)
 
     print(f"Decompressing {gz_path.name} to {sdf_path.name}...")
     with gzip.open(gz_path, 'rb') as f_in:
