@@ -45,26 +45,23 @@ def run_neff_bfactors():
     precomputed = dict(np.load(db_path))
     smi_path.unlink() # cleanup
     
+    print("Initializing NeffEngine for PDBs...")
+    from ligand_neff.engine import NeffEngine
+    engine = NeffEngine(config, precomputed_db=precomputed)
+    
     print("Precomputing query data...")
-    from ligand_neff.compute import prepare_query_data
-    all_query_data = [prepare_query_data(mol, config) for mol in tqdm(mols, desc="Precomputing")]
+    all_prepared_queries = [engine.prepare_query(mol) for mol in tqdm(mols, desc="Precomputing")]
     
     results = []
     
     for i in tqdm(range(len(pdb_data)), desc="LOSO Analysis"):
         record = pdb_data[i]
         query = record["mol"]
-        query_data = all_query_data[i]
+        prepared = all_prepared_queries[i]
         b_factors = record["b_factors"]
         
         # Compute Neff
-        res = compute_neff(
-            query_data=query_data,
-            config=config,
-            db_mols=None,
-            precomputed_db=precomputed,
-            query_mol=query
-        )
+        res = engine.compute_prepared(prepared)
         
         # Extract per-atom Neff (from the returned fields)
         atom_neffs = res.atom_neff

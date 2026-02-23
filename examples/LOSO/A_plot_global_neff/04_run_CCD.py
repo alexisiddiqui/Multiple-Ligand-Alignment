@@ -33,25 +33,23 @@ def run_ccd():
     mols = load_mols_from_smi(smi_path)
     precomputed_ccd = dict(np.load(ccd_db_path))
     
+    print("Initializing NeffEngine for CCD database...")
+    from ligand_neff.engine import NeffEngine
+    engine = NeffEngine(config, precomputed_db=precomputed_ccd)
+    
     n_mols = len(mols)
     processed_results = []
     
     print(f"Precomputing query data for {n_mols} molecules...")
-    all_query_data = [prepare_query_data(mol, config) for mol in tqdm(mols, desc="Precomputing")]
+    all_prepared_queries = [engine.prepare_query(mol) for mol in tqdm(mols, desc="Precomputing")]
     
     print(f"Starting Neff computation against CCD db for {n_mols} molecules...")
     
     for i in tqdm(range(n_mols), desc="CCD Progress"):
         query = mols[i]
-        query_data = all_query_data[i]
+        prepared = all_prepared_queries[i]
         
-        res = compute_neff(
-            query_data=query_data,
-            config=config,
-            db_mols=None,
-            precomputed_db=precomputed_ccd,
-            query_mol=query
-        )
+        res = engine.compute_prepared(prepared)
         
         processed_results.append({
             "idx": i,

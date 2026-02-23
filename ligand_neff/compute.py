@@ -11,7 +11,8 @@ from ligand_neff.fingerprints.decompose import decompose
 from ligand_neff.similarity.filtering import filter_references
 from ligand_neff.neff.weighting import inverse_degree_weights
 from ligand_neff.neff.per_atom import per_atom_neff_single_radius
-from ligand_neff.neff.aggregation import aggregate_neff, normalise_to_confidence
+from ligand_neff.neff.aggregation import aggregate_neff_stacked, normalise_to_confidence
+from ligand_neff.io.db_cache import DbCache, load_precomputed_npz
 
 def prepare_query_data(query: Chem.Mol, config: NeffConfig) -> QueryData:
     """
@@ -43,7 +44,7 @@ def compute_neff(
     query_data: QueryData, 
     config: NeffConfig,
     db_mols: Sequence[Chem.Mol] | None = None, 
-    precomputed_db: str | dict | None = None,
+    precomputed_db: str | dict | DbCache | None = None,
     query_mol: Chem.Mol | None = None
 ) -> NeffResult:
     """
@@ -57,9 +58,22 @@ def compute_neff(
     # the per-function limit only fires on pathological single-call retracing.
     chex.clear_trace_counter()
     
+    # ── 0. Fast Path via NeffEngine ──────────────────────────────
+    if isinstance(precomputed_db, DbCache):
+        from ligand_neff.engine import NeffEngine
+        engine = NeffEngine(config, precomputed_db=precomputed_db, compile_on_init=False)
+        
+        # If query_data is provided, NeffEngine will just extract arrays. 
+        # But if it's missing (though it's required in signature here), it computes it.
+        prepared = engine.prepare_query(query_mol=query_mol, query_data=query_data)
+        
+        # We also need to map the output to NeffResult properly with correct mol. 
+        # NeffEngine compute_prepared already returns NeffResult.
+        return engine.compute_prepared(prepared)
+    
     # ── 0. Handle Precomputed Database ───────────────────────────
     if isinstance(precomputed_db, str):
-        precomputed_db = np.load(precomputed_db)
+        precomputed_db = load_precomputed_npz(precomputed_db)
         
     # ── 1. CPU Stage: Fingerprints & Filtering ───────────────────
     neff_per_radius = {}
@@ -71,7 +85,9 @@ def compute_neff(
         q_fp = query_data.fps[r]
                               
         # DB Fingerprints (load from precomputed if available)
-        if precomputed_db is not None:
+        if isinstance(precomputed_db, DbCache):
+            db_fps = precomputed_db.db_fps_per_radius[r]
+        elif precomputed_db is not None:
             db_fps = precomputed_db[f"radius_{r}"].astype(np.float32)
         else:
             if db_mols is None:
@@ -117,14 +133,13 @@ def compute_neff(
             min_overlap=config.min_overlap,
         )
         
-        neff_per_radius[r] = np.asarray(neff_r)
+        neff_per_radius[r] = neff_r
         
     # ── 3. Aggregation across Radii ──────────────────────────────
-    # Convert dict of numpy arrays back to JAX arrays for aggregation
-    neff_per_radius_jax = {r: jnp.array(v) for r, v in neff_per_radius.items()}
+    stacked_neff = jnp.stack([neff_per_radius[r] for r in config.fp_radii], axis=0)
     
-    combined_neff = aggregate_neff(
-        neff_per_radius_jax, 
+    combined_neff = aggregate_neff_stacked(
+        stacked_neff, 
         method=config.aggregation, 
         radius_weights=config.radius_weights
     )
@@ -142,12 +157,15 @@ def compute_neff(
     global_neff = float(jnp.mean(combined_neff))
     global_confidence = float(jnp.mean(confidence))
 
+    # Convert results back to numpy arrays
+    neff_per_radius_np = {r: np.asarray(v) for r, v in neff_per_radius.items()}
+
     return NeffResult(
         query_mol=query_mol,
         config=config,
         atom_neff=np.asarray(combined_neff),
         atom_confidence=np.asarray(confidence),
-        neff_per_radius=neff_per_radius,
+        neff_per_radius=neff_per_radius_np,
         global_neff=global_neff,
         global_confidence=global_confidence,
         n_references_used=max_refs_used,

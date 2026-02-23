@@ -97,18 +97,27 @@ def run_config(config_path: Path) -> None:
 
     # ── 2. Cross-compute Neff ─────────────────────────────────────────────────
     results = []
-    from ligand_neff.compute import prepare_query_data
     
-    receptor_query_data: dict[str, list] = {}
+    print("  Initializing NeffEngines...")
+    from ligand_neff.engine import NeffEngine
+    engines = {
+        receptor: NeffEngine(config, precomputed_db=precomputed_dbs[receptor]) 
+        for receptor in RECEPTORS
+    }
+    
+    receptor_prepared_queries: dict[str, list] = {}
     for receptor in RECEPTORS:
-        receptor_query_data[receptor] = [prepare_query_data(mol, config) for mol in tqdm(receptor_mols[receptor], desc=f"  Precomputing {receptor}")]
+        receptor_prepared_queries[receptor] = [
+            engines[receptor].prepare_query(mol) 
+            for mol in tqdm(receptor_mols[receptor], desc=f"  Precomputing {receptor}")
+        ]
 
     for source_rec in RECEPTORS:
         mols = receptor_mols[source_rec]
-        query_datas = receptor_query_data[source_rec]
+        prepared_queries = receptor_prepared_queries[source_rec]
         desc = f"  {source_rec} ligands"
 
-        for i, (query_mol, query_data) in enumerate(tqdm(zip(mols, query_datas), desc=desc, total=len(mols))):
+        for i, (query_mol, prepared) in enumerate(tqdm(zip(mols, prepared_queries), desc=desc, total=len(mols))):
             mol_id = (
                 query_mol.GetProp("_Name")
                 if query_mol.HasProp("_Name")
@@ -116,14 +125,8 @@ def run_config(config_path: Path) -> None:
             )
 
             for ref_rec in RECEPTORS:
-                ref_db = precomputed_dbs[ref_rec]
-                res = compute_neff(
-                    query_data=query_data,
-                    config=config,
-                    db_mols=None,
-                    precomputed_db=ref_db,
-                    query_mol=query_mol
-                )
+                # Use the fast device engine associated with the reference DB
+                res = engines[ref_rec].compute_prepared(prepared)
 
                 results.append({
                     "config_name": cfg_name,

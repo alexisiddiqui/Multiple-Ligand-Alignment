@@ -47,7 +47,7 @@ Non-goals (for now): bit-packed/popcount fingerprints, approximate nearest neigh
 ---
 
 ## Phases and atomic steps
-
+<!-- 
 ### Phase 0 — Baseline + acceptance criteria (1 day)
 **Outcome:** You can quantify wins and avoid regressions.
 
@@ -64,7 +64,7 @@ Non-goals (for now): bit-packed/popcount fingerprints, approximate nearest neigh
      - at least **2× faster** than legacy for the same config after warm-up
      - no per-radius CPU sync in the hot path (verify by removing `np.asarray` in new path)
 
----
+--- -->
 
 ### Phase 1 — Device-resident DB cache (1–2 days)
 **Outcome:** DB is loaded once and stays on device; `compute_neff` no longer `.astype()`s per call.

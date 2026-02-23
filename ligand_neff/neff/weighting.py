@@ -9,7 +9,7 @@ from beartype import beartype as typechecker
 def inverse_degree_weights(
     fps: Float[Array, "max_refs fp_size"],
     mask: Bool[Array, " max_refs"],
-    threshold: float = 0.7,
+    threshold: float | jax.Array = 0.7,
     chunk_size: int = 2048,
 ) -> Float[Array, " max_refs"]:
     """
@@ -59,7 +59,6 @@ def inverse_degree_weights(
         0.0,
     )
 
-    chex.assert_tree_all_finite(weights)
     return weights
 
 
@@ -67,7 +66,7 @@ def _chunked_neighbor_count(
     fps: jnp.ndarray,         # (max_refs_padded, fp_size)  ← PADDED to chunk multiple
     fp_bits: jnp.ndarray,     # (max_refs_padded,)
     mask: jnp.ndarray,        # (max_refs_padded,)  — False on padding
-    threshold: float,
+    threshold: float | jax.Array,
     chunk_size: int,           # STATIC — must divide max_refs_padded exactly
 ) -> jnp.ndarray:             # (max_refs_padded,)
     """

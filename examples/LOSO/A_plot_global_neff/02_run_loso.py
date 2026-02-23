@@ -25,29 +25,30 @@ def run_loso():
     precomputed = dict(np.load(db_path))
     config = load_config(config_path)
     
+    print("Initializing NeffEngine for LOSO...")
+    from ligand_neff.engine import NeffEngine
+    from ligand_neff.io.db_cache import build_db_cache
+    engine = NeffEngine(config, precomputed_db=precomputed)
+    
     n_mols = len(mols)
     processed_results = []
     
     print(f"Precomputing query data for {n_mols} molecules...")
-    from ligand_neff.compute import prepare_query_data
-    all_query_data = [prepare_query_data(mol, config) for mol in tqdm(mols, desc="Precomputing")]
+    all_prepared_queries = [engine.prepare_query(mol) for mol in tqdm(mols, desc="Precomputing")]
     
     print(f"Starting LOSO for {n_mols} molecules...")
     
     for i in tqdm(range(n_mols), desc="LOSO Progress"):
         query = mols[i]
-        query_data = all_query_data[i]
+        prepared = all_prepared_queries[i]
         
         # Exclude the query from the precomputed db
-        loso_db = create_loso_db(precomputed, config.fp_radii, i)
-            
-        res = compute_neff(
-            query_data=query_data,
-            config=config,
-            db_mols=None,
-            precomputed_db=loso_db,
-            query_mol=query
-        )
+        loso_db_dict = create_loso_db(precomputed, config.fp_radii, i)
+        loso_cache = build_db_cache(loso_db_dict, config.fp_radii)
+        
+        # We can dynamically swap the DB cache in the engine (cache array shape is static)
+        engine.db_cache = loso_cache
+        res = engine.compute_prepared(prepared)
         
         processed_results.append({
             "idx": i,
