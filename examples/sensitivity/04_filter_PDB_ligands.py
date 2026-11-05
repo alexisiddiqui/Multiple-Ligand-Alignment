@@ -2,7 +2,7 @@
 Sensitivity Example — Step 4: Filter PDB Ligands
 ================================================
 Filters PR and AR ligands based on their alignment confidence against the
-PDB Chemical Component Dictionary (CCD) dataset. Ligands with a global 
+PDB Chemical Component Dictionary (CCD) dataset. Ligands with a global
 confidence score >= THRESHOLD are kept as "drug-like" PDB ligands.
 
 Usage:
@@ -22,9 +22,12 @@ import pandas as pd
 import seaborn as sns
 from tqdm import tqdm
 
+import jax.numpy as jnp
+
 from ligand_neff.config import load_config
 from ligand_neff.engine import NeffEngine
 from ligand_neff.io.database import precompute_database
+from ligand_neff.similarity.tanimoto import bulk_tanimoto
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -32,6 +35,7 @@ COMMON_DIR = BASE_DIR.parent / "LOSO" / "common"
 
 RECEPTORS = ["PR", "AR"]
 CONFIDENCE_THRESHOLD = 0.5
+TANIMOTO_THRESHOLD = 0.9
 
 
 def load_mols_from_smi(smi_path: Path) -> list:
@@ -59,9 +63,7 @@ def load_mols_from_smi(smi_path: Path) -> list:
     return mols
 
 
-def save_filtered_mols(
-    original_mols: list, filtered_indices: set[int], out_path: Path
-) -> None:
+def save_filtered_mols(original_mols: list, filtered_indices: set[int], out_path: Path) -> None:
     """Save the filtered subset of molecules to a new .smi file."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
@@ -73,9 +75,11 @@ def save_filtered_mols(
 
 
 def plot_distributions(results_df: pd.DataFrame, out_path: Path) -> None:
-    """Plot the Neff global confidence distributions for both receptors."""
-    plt.figure(figsize=(8, 5))
-    
+    """Plot the Neff global confidence, global Neff, and max Tanimoto distributions for both receptors."""
+    palette = ["#2196F3", "#4CAF50"]  # Blue for PR, Green for AR
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 5))
+
+    # Plot 1: Global Confidence
     sns.kdeplot(
         data=results_df,
         x="global_confidence",
@@ -83,27 +87,73 @@ def plot_distributions(results_df: pd.DataFrame, out_path: Path) -> None:
         common_norm=False,
         fill=True,
         alpha=0.5,
-        palette=["#2196F3", "#4CAF50"]  # Blue for PR, Green for AR
+        palette=palette,
+        ax=ax1,
     )
 
-    plt.axvline(
+    ax1.axvline(
         x=CONFIDENCE_THRESHOLD,
         color="red",
         linestyle="--",
         label=f"Cutoff = {CONFIDENCE_THRESHOLD}",
     )
-    
-    plt.title("Distribution of Neff Global Confidence vs PDB CCD")
-    plt.xlabel("Global Confidence")
-    plt.ylabel("Density")
-    plt.xlim(0, 1.0)
-    plt.legend(title="Receptor / Threshold")
-    
+
+    ax1.set_title("Distribution of Neff Global Confidence vs PDB CCD")
+    ax1.set_xlabel("Global Confidence")
+    ax1.set_ylabel("Density")
+    ax1.set_xlim(0, 1.0)
+    ax1.legend(title="Receptor / Threshold")
+
+    # Plot 2: Global Neff (log scale)
+    for receptor in results_df["receptor"].unique():
+        receptor_data = results_df[results_df["receptor"] == receptor]
+        color = "#2196F3" if receptor == "PR" else "#4CAF50"
+        ax2.hist(
+            receptor_data["global_neff"],
+            bins=50,
+            alpha=0.6,
+            label=receptor,
+            color=color,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+
+    ax2.set_yscale("log")
+    ax2.set_title("Distribution of Neff Global Neff vs PDB CCD")
+    ax2.set_xlabel("Global Neff")
+    ax2.set_ylabel("Count (log scale)")
+    ax2.legend(title="Receptor")
+    ax2.grid(True, alpha=0.3, which="both")
+
+    # Plot 3: Max Tanimoto similarity to CCD
+    if "max_tanimoto" in results_df.columns:
+        sns.kdeplot(
+            data=results_df,
+            x="max_tanimoto",
+            hue="receptor",
+            common_norm=False,
+            fill=True,
+            alpha=0.5,
+            palette=palette,
+            ax=ax3,
+        )
+        ax3.axvline(
+            x=TANIMOTO_THRESHOLD,
+            color="red",
+            linestyle="--",
+            label=f"Cutoff = {TANIMOTO_THRESHOLD}",
+        )
+        ax3.set_title("Distribution of Max Tanimoto Similarity vs PDB CCD")
+        ax3.set_xlabel("Max Tanimoto Similarity")
+        ax3.set_ylabel("Density")
+        ax3.set_xlim(0, 1.0)
+        ax3.legend(title="Receptor / Threshold")
+
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close()
-    
+
     print(f"  Distribution plot saved to {out_path.relative_to(BASE_DIR)}")
 
 
@@ -120,7 +170,7 @@ def run_filter(config_path: Path) -> None:
             print(f"Error: CCD components file not found at {ccd_sdf_path}")
             print("Please run examples/LOSO/common/download_ccd.py first.")
             sys.exit(1)
-            
+
         print(f"  Precomputing CCD database from {ccd_sdf_path}...")
         precompute_database(ccd_sdf_path, ccd_db_path, config)
 
@@ -128,7 +178,7 @@ def run_filter(config_path: Path) -> None:
     precomputed_ccd = dict(np.load(ccd_db_path))
 
     print("  Initializing NeffEngine for CCD database...")
-    engine = NeffEngine(config, precomputed_db=precomputed_ccd, max_atoms=100)
+    engine = NeffEngine(config, precomputed_db=precomputed_ccd, max_atoms=200)
 
     all_results = []
 
@@ -151,11 +201,18 @@ def run_filter(config_path: Path) -> None:
         receptor_results = []
         filtered_indices = set()
 
+        # Grab the CCD fingerprints for the highest radius (used for max Tanimoto)
+        db_fps_for_tan = engine.db_cache.db_fps_stacked[-1]  # (n_db, fp_size)
+
         for i in tqdm(range(n_mols), desc="Compute"):
             query_mol = mols[i]
             prepared = prepared_queries[i]
             res = engine.compute_prepared(prepared)
-            
+
+            # Max Tanimoto similarity to the CCD dataset (highest-radius fingerprint)
+            sims = bulk_tanimoto(prepared.q_fps[-1], db_fps_for_tan)
+            max_tan = float(jnp.max(sims))
+
             receptor_results.append(
                 {
                     "receptor": receptor,
@@ -163,30 +220,31 @@ def run_filter(config_path: Path) -> None:
                     "id": query_mol.GetProp("_Name"),
                     "global_confidence": res.global_confidence,
                     "global_neff": res.global_neff,
+                    "max_tanimoto": max_tan,
                 }
             )
 
-            if res.global_confidence >= CONFIDENCE_THRESHOLD:
+            if max_tan >= TANIMOTO_THRESHOLD:
                 filtered_indices.add(i)
 
         # Save filtered ligands
         out_smi_path = DATA_DIR / f"{receptor.lower()}_ligands_pdb.smi"
         save_filtered_mols(mols, filtered_indices, out_smi_path)
-        
+
         n_filtered = len(filtered_indices)
         pct = (n_filtered / n_mols) * 100 if n_mols > 0 else 0
         print(f"  Retained {n_filtered}/{n_mols} ligands ({pct:.1f}%) ≥ threshold.")
         print(f"  Filtered file saved to {out_smi_path.relative_to(BASE_DIR)}")
-        
+
         all_results.extend(receptor_results)
 
     if all_results:
         df = pd.DataFrame(all_results)
-        
+
         # Save raw scores for inspection
         csv_path = DATA_DIR / "pdb_filter_scores.csv"
         df.to_csv(csv_path, index=False)
-        
+
         print("\n── Plotting Distributions ──")
         plot_path = DATA_DIR / "pdb_ligands_filter_dist.png"
         plot_distributions(df, plot_path)
@@ -207,8 +265,8 @@ def main() -> None:
     args = parser.parse_args()
 
     print(f"Running filtering with config: {args.config.name}")
-    print(f"Global Confidence Threshold: {CONFIDENCE_THRESHOLD}")
-    
+    print(f"Max Tanimoto Threshold: {TANIMOTO_THRESHOLD}")
+
     run_filter(args.config)
 
 
